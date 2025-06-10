@@ -105,9 +105,17 @@ bool translator::translate_instruction(const Instruction &inst,
       case Type::Kind::kArray:
         cty = cty->AsArray()->element_type();
         break;
-      case Type::Kind::kStruct:
-        cty = cty->AsStruct()->element_types()[idx];
+      case Type::Kind::kStruct: {
+        auto cstmgr = m_ir->get_constant_mgr();
+        auto idx_cst = cstmgr->FindDeclaredConstant(idx);
+        if (idx_cst == nullptr) {
+          std::cerr << "UNIMPLEMENTED struct access with non-constant index" << std::endl;
+          return false;
+        }
+        uint32_t struct_idx = idx_cst->GetU32();
+        cty = cty->AsStruct()->element_types()[struct_idx];
         break;
+      }
       default:
         std::cerr << "UNIMPLEMENTED access chain type " << cty->kind()
                   << std::endl;
