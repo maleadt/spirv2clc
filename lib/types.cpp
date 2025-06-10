@@ -126,8 +126,8 @@ bool translator::translate_type(const Instruction &inst) {
     break;
   }
   case spv::Op::OpTypeArray: {
-    // Handled for pointers in OpTypePointer
-    // Variable declarations are special-cased elsewhere
+    // Array types are handled in variable declarations
+    // We don't register a type name for them since they need special syntax
     break;
   }
   case spv::Op::OpTypeImage: {

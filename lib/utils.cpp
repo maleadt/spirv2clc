@@ -43,12 +43,33 @@ std::string translator::src_var_decl(uint32_t tyid, const std::string &name,
                                      uint32_t val) const {
   auto ty = type_for(tyid);
   if (ty->kind() == spvtools::opt::analysis::Type::Kind::kArray) {
-    auto aty = ty->AsArray();
-    auto eid = type_id_for(aty->element_type());
-    auto cstmgr = m_ir->get_constant_mgr();
-    auto ecnt =
-        cstmgr->FindDeclaredConstant(aty->LengthId())->GetSignExtendedValue();
-    return src_type(eid) + " " + name + "[" + std::to_string(ecnt) + "]";
+    // Collect all array dimensions by walking through nested arrays
+    std::vector<uint32_t> dimensions;
+    const auto* current_ty = ty;
+
+    while (current_ty->kind() == spvtools::opt::analysis::Type::Kind::kArray) {
+      auto aty = current_ty->AsArray();
+      auto cstmgr = m_ir->get_constant_mgr();
+      auto ecnt = cstmgr->FindDeclaredConstant(aty->LengthId())->GetSignExtendedValue();
+      dimensions.push_back(ecnt);
+      current_ty = aty->element_type();
+    }
+
+    // Get the base element type (non-array)
+    auto base_type_id = type_id_for(current_ty);
+    std::string base_type;
+    if (val != 0) {
+      base_type = src_type_for_value(val);
+    } else {
+      base_type = src_type(base_type_id);
+    }
+
+    // Build the declaration: base_type name[dim1][dim2]...[dimN]
+    std::string result = base_type + " " + name;
+    for (uint32_t dim : dimensions) {
+      result += "[" + std::to_string(dim) + "]";
+    }
+    return result;
   } else {
     if (val != 0) {
       return src_type_for_value(val) + " " + name;
