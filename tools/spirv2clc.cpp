@@ -16,17 +16,55 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <unordered_map>
 
 #include "spirv2clc.h"
 
+std::unordered_map<std::string, spv_target_env> get_spirv_version_map() {
+  return {
+    {"1.0", SPV_ENV_UNIVERSAL_1_0},
+    {"vulkan1.0", SPV_ENV_VULKAN_1_0},
+    {"1.1", SPV_ENV_UNIVERSAL_1_1},
+    {"opencl1.2", SPV_ENV_OPENCL_1_2},
+    {"opencl-embedded1.2", SPV_ENV_OPENCL_EMBEDDED_1_2},
+    {"opencl2.0", SPV_ENV_OPENCL_2_0},
+    {"opencl-embedded2.0", SPV_ENV_OPENCL_EMBEDDED_2_0},
+    {"opencl2.1", SPV_ENV_OPENCL_2_1},
+    {"opencl-embedded2.1", SPV_ENV_OPENCL_EMBEDDED_2_1},
+    {"opencl2.2", SPV_ENV_OPENCL_2_2},
+    {"opencl-embedded2.2", SPV_ENV_OPENCL_EMBEDDED_2_2},
+    {"opengl4.0", SPV_ENV_OPENGL_4_0},
+    {"opengl4.1", SPV_ENV_OPENGL_4_1},
+    {"opengl4.2", SPV_ENV_OPENGL_4_2},
+    {"opengl4.3", SPV_ENV_OPENGL_4_3},
+    {"opengl4.5", SPV_ENV_OPENGL_4_5},
+    {"1.2", SPV_ENV_UNIVERSAL_1_2},
+    {"1.3", SPV_ENV_UNIVERSAL_1_3},
+    {"vulkan1.1", SPV_ENV_VULKAN_1_1},
+    {"1.4", SPV_ENV_UNIVERSAL_1_4},
+    {"vulkan1.1-spirv1.4", SPV_ENV_VULKAN_1_1_SPIRV_1_4},
+    {"1.5", SPV_ENV_UNIVERSAL_1_5},
+    {"vulkan1.2", SPV_ENV_VULKAN_1_2},
+    {"1.6", SPV_ENV_UNIVERSAL_1_6},
+    {"vulkan1.3", SPV_ENV_VULKAN_1_3}
+  };
+}
+
 void fail_help(const char *prog) {
-  std::cerr << "Usage: " << prog << " [ --asm ] input.spv[asm]" << std::endl;
+  std::cerr << "Usage: " << prog << " [ --asm ] [ --spirv-version=<version> ] input.spv[asm]" << std::endl;
+  std::cerr << "Available SPIR-V versions:" << std::endl;
+  std::cerr << "  1.0, 1.1, universal1.2, 1.3, 1.4, 1.5, 1.6" << std::endl;
+  std::cerr << "  opencl1.2, opencl2.0, opencl2.1, opencl2.2 (and embedded variants)" << std::endl;
+  std::cerr << "  vulkan1.0, vulkan1.1, vulkan1.2, vulkan1.3" << std::endl;
+  std::cerr << "  opengl4.0, opengl4.1, opengl4.2, opengl4.3, opengl4.5" << std::endl;
   exit(EXIT_FAILURE);
 }
 
 int main(int argc, char *argv[]) {
 
   bool input_asm = false;
+  spv_target_env target_env = SPV_ENV_OPENCL_1_2; // default
+  auto version_map = get_spirv_version_map();
 
   int arg = 1;
 
@@ -38,6 +76,15 @@ int main(int argc, char *argv[]) {
   while (arg < argc) {
     if (!strcmp(argv[arg], "--asm")) {
       input_asm = true;
+      num_options++;
+    } else if (!strncmp(argv[arg], "--spirv-version=", 16)) {
+      std::string version_str = argv[arg] + 16;
+      auto it = version_map.find(version_str);
+      if (it == version_map.end()) {
+        std::cerr << "Unknown SPIR-V version '" << version_str << "'" << std::endl;
+        fail_help(argv[0]);
+      }
+      target_env = it->second;
       num_options++;
     } else if (!strncmp(argv[arg], "--", 2)) {
       std::cerr << "Unknown option '" << argv[arg] << "'" << std::endl;
@@ -58,7 +105,7 @@ int main(int argc, char *argv[]) {
     exit(EXIT_FAILURE);
   }
 
-  spirv2clc::translator translator;
+  spirv2clc::translator translator(target_env);
   std::string srcgen;
   int err;
   if (input_asm) {
