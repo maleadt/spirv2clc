@@ -286,6 +286,7 @@ private:
     m_volatiles.clear();
     m_packed.clear();
     m_nowrite_params.clear();
+    m_byval_params.clear();
     m_alignments.clear();
     m_phi_vals.clear();
     m_phi_assigns.clear();
@@ -316,6 +317,7 @@ private:
   std::unordered_set<uint32_t> m_volatiles;
   std::unordered_set<uint32_t> m_packed;
   std::unordered_set<uint32_t> m_nowrite_params;
+  std::unordered_set<uint32_t> m_byval_params;
   std::unordered_map<uint32_t, uint32_t> m_alignments;
   std::unordered_map<spvtools::opt::Function *, std::vector<uint32_t>>
       m_phi_vals;

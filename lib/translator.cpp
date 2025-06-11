@@ -269,6 +269,9 @@ bool translator::translate_annotations() {
         case SpvFunctionParameterAttributeNoWrite:
           m_nowrite_params.insert(target);
           break;
+        case SpvFunctionParameterAttributeByVal:
+          m_byval_params.insert(target);
+          break;
         default:
           std::cerr << "UNIMPLEMENTED FuncParamAttr " << param_attr
                     << std::endl;
@@ -359,6 +362,7 @@ bool translator::translate_annotations() {
       bool hasvolatile = m_volatiles.count(group) != 0;
       bool packed = m_packed.count(group) != 0;
       bool nowrite = m_nowrite_params.count(group) != 0;
+      bool byval = m_byval_params.count(group) != 0;
       bool saturated_conversion = m_saturated_conversions.count(group) != 0;
       bool has_rounding_mode = m_rounding_mode_decorations.count(group) != 0;
       SpvFPRoundingMode rounding_mode;
@@ -383,6 +387,9 @@ bool translator::translate_annotations() {
         }
         if (nowrite) {
           m_nowrite_params.insert(target);
+        }
+        if (byval) {
+          m_byval_params.insert(target);
         }
         if (saturated_conversion) {
           m_saturated_conversions.insert(target);
@@ -452,7 +459,18 @@ bool translator::translate_function(Function &func) {
     if (m_nowrite_params.count(result)) {
       m_src << "const ";
     }
-    m_src << src_type_memory_object_declaration(type, result);
+
+    if (m_byval_params.count(result)) {
+      // Pass byval parameters by value instead of by pointer
+      auto param_type = type_for(type);
+      assert(param_type->kind() == Type::Kind::kPointer);
+      auto ptr_type = param_type->AsPointer();
+      auto pointee_type = ptr_type->pointee_type();
+      auto pointee_type_id = type_id_for(pointee_type);
+      m_src << src_type(pointee_type_id) << " " << var_for(result) << "_value";
+    } else {
+      m_src << src_type_memory_object_declaration(type, result);
+    }
     sep = ", ";
   });
 
@@ -519,6 +537,16 @@ bool translator::translate_function(Function &func) {
 
   // Now translate
   bool error = false;
+
+  // Add helper variables for byval arguments containing a pointer
+  // (for compatibility with existing code)
+  func.ForEachParam([this](const Instruction *inst) {
+    auto result = inst->result_id();
+    if (m_byval_params.count(result)) {
+      m_src << "  " << src_type(inst->type_id()) << " " << var_for(result) << " = &" << var_for(result) << "_value;\n";
+    }
+  });
+
   if (m_phi_vals.count(&func)) {
     for (auto phival : m_phi_vals.at(&func)) {
       auto phitype = type_id_for(phival);
