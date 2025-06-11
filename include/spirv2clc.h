@@ -15,6 +15,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -237,6 +238,10 @@ private:
   bool is_valid_identifier(const std::string& name) const;
   std::string make_valid_identifier(const std::string& name) const;
 
+  std::optional<std::string>
+  get_string_literal(const spvtools::opt::Instruction &inst) const;
+  std::optional<std::string> string_literal_for(uint32_t var_id) const;
+
   bool get_null_constant(uint32_t tyid, std::string &src) const;
   std::string
   translate_extended_unary(const spvtools::opt::Instruction &inst) const;
@@ -296,6 +301,7 @@ private:
     m_sampled_images.clear();
     m_boolean_src_types.clear();
     m_local_variable_decls.clear();
+    m_constant_string_literals.clear();
   }
 
   spv_target_env m_target_env;
@@ -332,6 +338,8 @@ private:
   std::unordered_map<uint32_t, std::string>
       m_boolean_src_types; // value, C type name
   std::unordered_map<uint32_t, std::string> m_local_variable_decls;
+  std::unordered_map<uint32_t, std::string>
+      m_constant_string_literals; // variable id -> string literal
 };
 
 } // namespace spirv2clc

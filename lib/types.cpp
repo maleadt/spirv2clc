@@ -463,6 +463,20 @@ bool translator::translate_types_values() {
         std::string local_var_decl = "local " + src_type_memory_object_declaration(typointeeid, result);
         m_local_variable_decls[result] = local_var_decl;
       } else if (storage == SpvStorageClassUniformConstant) {
+        // Check if initializer is a string array and cache it for later use
+        if (inst.NumOperands() > 3) {
+          auto init = inst.GetSingleWordOperand(3);
+          auto defuse = m_ir->get_def_use_mgr();
+          auto init_inst = defuse->GetDef(init);
+          if (init_inst &&
+              init_inst->opcode() == spv::Op::OpConstantComposite) {
+            auto string_literal = get_string_literal(*init_inst);
+            if (string_literal) {
+              m_constant_string_literals[result] = *string_literal;
+            }
+          }
+        }
+
         m_src << "constant "
               << src_type_memory_object_declaration(typointeeid, result);
         if (inst.NumOperands() > 3) {

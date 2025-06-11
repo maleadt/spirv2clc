@@ -398,3 +398,110 @@ std::string translator::make_valid_identifier(const std::string& name) const {
 
   return newname;
 }
+
+std::optional<std::string>
+translator::get_string_literal(const spvtools::opt::Instruction &inst) const {
+  auto rtype = inst.type_id();
+  auto type = type_for(rtype);
+
+  // Must be an array type
+  if (type->kind() != Type::Kind::kArray) {
+    return std::nullopt;
+  }
+
+  auto tarray = type->AsArray();
+  auto elem_type = tarray->element_type();
+
+  // Element type must be 8-bit integer (char/uchar)
+  if (elem_type->kind() != Type::Kind::kInteger) {
+    return std::nullopt;
+  }
+
+  auto tint = elem_type->AsInteger();
+  if (tint->width() != 8) {
+    return std::nullopt;
+  }
+
+  uint32_t num_elems = array_type_get_length(rtype);
+  if (num_elems == 0) {
+    return std::nullopt;
+  }
+
+  auto defuse = m_ir->get_def_use_mgr();
+
+  // Check that the last element is a null terminator
+  auto last_elem_id = inst.GetSingleWordOperand(num_elems - 1 + 2);
+  auto last_elem_inst = defuse->GetDef(last_elem_id);
+  if (!last_elem_inst || last_elem_inst->opcode() != spv::Op::OpConstant) {
+    return std::nullopt;
+  }
+  auto &last_op_val = last_elem_inst->GetOperand(2);
+  uint8_t last_value = static_cast<uint8_t>(last_op_val.words[0]);
+  if (last_value != 0) {
+    return std::nullopt;
+  }
+
+  std::string result = "\"";
+
+  // Iterate through all elements except the last (null terminator)
+  for (uint32_t i = 0; i < num_elems - 1; i++) {
+    auto elem_id = inst.GetSingleWordOperand(i + 2);
+    auto elem_inst = defuse->GetDef(elem_id);
+
+    // Must be a constant
+    if (!elem_inst || elem_inst->opcode() != spv::Op::OpConstant) {
+      return std::nullopt;
+    }
+
+    // Get the raw constant value
+    auto &op_val = elem_inst->GetOperand(2);
+    uint8_t value = static_cast<uint8_t>(op_val.words[0]);
+
+    // Bail out if we encounter a null within the string content
+    if (value == 0) {
+      return std::nullopt;
+    }
+
+    // Convert value to string literal character
+    switch (value) {
+    case 9:
+      result += "\\t";
+      break;
+    case 10:
+      result += "\\n";
+      break;
+    case 13:
+      result += "\\r";
+      break;
+    case 34:
+      result += "\\\"";
+      break;
+    case 92:
+      result += "\\\\";
+      break;
+    default:
+      if (value >= 32 && value <= 126) {
+        result += static_cast<char>(value);
+      } else {
+        // Use octal escape for other values
+        result += "\\";
+        result += std::to_string((value >> 6) & 7);
+        result += std::to_string((value >> 3) & 7);
+        result += std::to_string(value & 7);
+      }
+      break;
+    }
+  }
+
+  result += "\"";
+  return result;
+}
+
+std::optional<std::string>
+translator::string_literal_for(uint32_t var_id) const {
+  auto it = m_constant_string_literals.find(var_id);
+  if (it != m_constant_string_literals.end()) {
+    return it->second;
+  }
+  return std::nullopt;
+}
