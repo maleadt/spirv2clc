@@ -312,7 +312,18 @@ bool translator::translate_extended_instruction(const Instruction &inst,
     }
     case OpenCLLIB::Printf: {
       auto format = inst.GetSingleWordOperand(4);
-      std::string src_args = var_for(format);
+      std::string format_arg = var_for(format);
+
+      // We need to pass a pointer to the format string to printf.
+      // If the format string is an array, take the address.
+      auto format_type = type_for_val(format);
+      auto ptr_type = format_type->AsPointer();
+      auto pointee_type = ptr_type->pointee_type();
+      if (pointee_type->kind() == Type::Kind::kArray) {
+        format_arg = "&" + format_arg + "[0]";
+      }
+
+      std::string src_args = format_arg;
       for (unsigned op = 5; op < inst.NumOperands(); op++) {
         auto arg = inst.GetSingleWordOperand(op);
         src_args += ", " + var_for(arg);
