@@ -105,8 +105,15 @@ bool translator::translate_type(const Instruction &inst) {
     m_src << "struct " + var_for(result) + " {" << std::endl;
     for (uint32_t opidx = 1; opidx < inst.NumOperands(); opidx++) {
       auto mid = inst.GetSingleWordOperand(opidx);
-      m_src << "  " << src_var_decl(mid, "m" + std::to_string(opidx - 1)) << ";"
-            << std::endl;
+      // Convert pointer members to integers, as most OpenCL compilers refuse
+      // structures with pointer members (even though OpenCL 2.0 allows it).
+      auto member_type = type_for(mid);
+      if (member_type->kind() == Type::Kind::kPointer) {
+        m_src << "  ulong m" << std::to_string(opidx - 1) << ";" << std::endl;
+      } else {
+        m_src << "  " << src_var_decl(mid, "m" + std::to_string(opidx - 1)) << ";"
+              << std::endl;
+      }
     }
     m_src << "}";
     if (m_packed.count(result)) {
