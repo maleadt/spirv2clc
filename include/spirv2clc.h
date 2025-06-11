@@ -264,6 +264,9 @@ private:
   bool translate_types_values();
   bool translate_function(spvtools::opt::Function &func);
 
+  void emit_function_signature(spvtools::opt::Function &func,
+                               bool is_prototype);
+
   bool validate_module(const std::vector<uint32_t> &binary) const;
   int translate();
 

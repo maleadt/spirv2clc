@@ -412,24 +412,28 @@ bool translator::translate_annotations() {
   return true;
 }
 
-bool translator::translate_function(Function &func) {
+void translator::emit_function_signature(Function &func, bool is_prototype) {
   auto &dinst = func.DefInst();
   auto rtype = dinst.type_id();
   auto result = dinst.result_id();
   auto control = dinst.GetSingleWordOperand(2);
 
-  bool decl = false;
   bool entrypoint = m_entry_points.count(result) != 0;
+  bool is_external = m_imports.count(result) != 0;
 
-  if (m_entry_points_contraction_off.count(result)) {
-    m_src << "#pragma OPENCL FP_CONTRACT OFF" << std::endl;
-  }
-
-  if (m_imports.count(result)) {
-    m_src << "extern ";
-    decl = true;
-  } else if ((m_exports.count(result) == 0) && !entrypoint) {
+  if (is_prototype) {
+    // For prototypes, only emit static non-entry, non-external functions
+    if (entrypoint || is_external) {
+      return;
+    }
     m_src << "static ";
+  } else {
+    // For definitions, emit full declaration logic
+    if (is_external) {
+      m_src << "extern ";
+    } else if ((m_exports.count(result) == 0) && !entrypoint) {
+      m_src << "static ";
+    }
   }
 
   if (control & SpvFunctionControlInlineMask) {
@@ -437,7 +441,7 @@ bool translator::translate_function(Function &func) {
   }
 
   m_src << src_type(rtype) + " ";
-  if (entrypoint) {
+  if (entrypoint && !is_prototype) {
     m_src << "kernel ";
     if (m_entry_points_local_size.count(result)) {
       auto &req = m_entry_points_local_size.at(result);
@@ -475,6 +479,30 @@ bool translator::translate_function(Function &func) {
   });
 
   m_src << ")";
+  if (is_prototype) {
+    m_src << ";" << std::endl;
+  }
+}
+
+bool translator::translate_function(Function &func) {
+  auto &dinst = func.DefInst();
+  auto result = dinst.result_id();
+
+  bool decl = false;
+  bool entrypoint = m_entry_points.count(result) != 0;
+
+  if (m_entry_points_contraction_off.count(result)) {
+    m_src << "#pragma OPENCL FP_CONTRACT OFF" << std::endl;
+  }
+
+  // Check if this is just a declaration
+  if (m_imports.count(result)) {
+    decl = true;
+  }
+
+  // Emit function signature
+  emit_function_signature(func, false);
+
   if (decl) {
     m_src << ";" << std::endl;
     return true;
@@ -645,7 +673,12 @@ int translator::translate() {
     return 1;
   }
 
-  // 10 & 11. Function declarations & definitions
+  // 10. Function declarations (prototypes)
+  for (auto &func : *m_ir->module()) {
+    emit_function_signature(func, true);
+  }
+
+  // 11. Function definitions
   for (auto &func : *m_ir->module()) {
     if (!translate_function(func)) {
       return 1;
