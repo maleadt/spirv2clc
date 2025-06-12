@@ -23,7 +23,9 @@ std::string translator::src_pointer_type(uint32_t storage, uint32_t tyid, bool s
     typestr += "local";
     break;
   case SpvStorageClassInput:
+    break;
   case SpvStorageClassFunction:
+    typestr += "generic";
     break;
   default:
     std::cerr << "UNIMPLEMENTED pointer storage class " << storage
