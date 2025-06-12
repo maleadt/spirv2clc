@@ -1,0 +1,34 @@
+; RUN: %spirv2clc --asm %s | %clang -c -cl-std=CL2.0 -x cl - -o /dev/null
+; XFAIL: *
+; SPIR-V
+; Version: 1.2
+; Generator: Khronos SPIR-V Tools Assembler; 0
+; Bound: 18
+; Schema: 0
+; handle variable declarations with multiply nested arrays and pointers
+               OpCapability Kernel
+               OpCapability Addresses
+               OpCapability Int64
+               OpCapability Linkage
+               OpMemoryModel Physical64 OpenCL
+               OpDecorate %1 BuiltIn WorkgroupId
+               OpDecorate %2 BuiltIn LocalInvocationId
+          %3 = OpTypeVoid
+          %4 = OpTypeInt 32 0
+          %5 = OpTypeInt 64 0
+          %6 = OpConstant %4 1
+          %7 = OpConstant %4 2
+          %8 = OpTypeArray %5 %7
+          %9 = OpTypeArray %8 %6
+         %10 = OpTypeArray %9 %6
+         %11 = OpTypePointer Function %10
+         %12 = OpTypeVector %5 3
+         %13 = OpTypePointer Input %12
+         %14 = OpTypeFunction %3
+          %1 = OpVariable %13 Input
+          %2 = OpVariable %13 Input
+         %15 = OpFunction %3 None %14
+         %16 = OpLabel
+         %17 = OpVariable %11 Function
+               OpReturn
+               OpFunctionEnd

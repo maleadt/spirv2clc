@@ -56,4 +56,7 @@ set(OPENCL_HEADERS_DIR ${PROJECT_SOURCE_DIR}/external/OpenCL-Headers)
 add_subdirectory(lib)
 add_subdirectory(tools)
 
-add_subdirectory(tests)
+option(ENABLE_TESTS "Enable tests" ON)
+if(ENABLE_TESTS)
+  add_subdirectory(tests)
+endif()

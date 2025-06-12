@@ -1,0 +1,30 @@
+; RUN: %spirv2clc --asm %s | %clang -c -cl-std=CL2.0 -x cl - -o /dev/null
+; SPIR-V
+; Version: 1.2
+; Generator: Khronos SPIR-V Tools Assembler; 0
+; Bound: 12
+; Schema: 0
+; used to crash with `use of undeclared identifier` because of the
+; function definition after the call
+               OpCapability Kernel
+               OpCapability Addresses
+               OpCapability Int64
+               OpCapability Linkage
+               OpMemoryModel Physical64 OpenCL
+               OpName %1 "gpu_report_exception"
+               OpDecorate %2 BuiltIn GlobalInvocationId
+          %3 = OpTypeVoid
+          %4 = OpTypeFunction %3
+          %5 = OpTypeInt 64 0
+          %6 = OpTypeVector %5 3
+          %7 = OpTypePointer Input %6
+          %2 = OpVariable %7 Input
+          %8 = OpFunction %3 DontInline %4
+          %9 = OpLabel
+         %10 = OpFunctionCall %3 %1
+               OpUnreachable
+               OpFunctionEnd
+          %1 = OpFunction %3 None %4
+         %11 = OpLabel
+               OpReturn
+               OpFunctionEnd

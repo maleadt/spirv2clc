@@ -1,0 +1,56 @@
+; RUN: %spirv2clc --asm %s | %clang -c -cl-std=CL2.0 -x cl - -o /dev/null
+; RUN: %spirv2clc --asm %s | %FileCheck %s
+; SPIR-V
+; Version: 1.2
+; Generator: Khronos SPIR-V Tools Assembler; 0
+; Bound: 42
+; Schema: 0
+; used to pass a global `constant uchar [...]` directly to printf, resulting in
+; warnings (sometimes errors) because of the conversion of `uchar[]` to `uchar*`
+; and in warnings about not using a literal string as the first argument.
+               OpCapability Kernel
+               OpCapability Addresses
+               OpCapability Int8
+               OpCapability Int64
+               OpCapability Linkage
+          %1 = OpExtInstImport "OpenCL.std"
+               OpMemoryModel Physical64 OpenCL
+               OpDecorate %2 BuiltIn WorkgroupId
+               OpDecorate %3 BuiltIn LocalInvocationId
+               OpDecorate %4 BuiltIn GlobalInvocationId
+          %5 = OpTypeVoid
+          %6 = OpTypeInt 32 0
+          %7 = OpTypeInt 8 0
+          %8 = OpConstant %6 15
+          %9 = OpTypeArray %7 %8
+         %10 = OpTypePointer UniformConstant %9
+         %11 = OpTypeFunction %5
+         %12 = OpConstant %7 72
+         %13 = OpConstant %7 101
+         %14 = OpConstant %7 108
+         %15 = OpConstant %7 108
+         %16 = OpConstant %7 111
+         %17 = OpConstant %7 44
+         %18 = OpConstant %7 32
+         %19 = OpConstant %7 87
+         %20 = OpConstant %7 111
+         %21 = OpConstant %7 114
+         %22 = OpConstant %7 108
+         %23 = OpConstant %7 100
+         %24 = OpConstant %7 33
+         %25 = OpConstant %7 10
+         %26 = OpConstant %7 0
+         %34 = OpConstantComposite %9 %12 %13 %14 %15 %16 %17 %18 %19 %20 %21 %22 %23 %24 %25 %26
+         %35 = OpVariable %10 UniformConstant %34
+         %36 = OpTypeInt 64 0
+         %37 = OpTypeVector %36 3
+         %38 = OpTypePointer Input %37
+          %2 = OpVariable %38 Input
+          %3 = OpVariable %38 Input
+          %4 = OpVariable %38 Input
+         %39 = OpFunction %5 DontInline %11
+         %40 = OpLabel
+         %41 = OpExtInst %6 %1 printf %35
+; CHECK: printf("Hello, World!\n");
+               OpReturn
+               OpFunctionEnd

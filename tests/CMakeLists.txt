@@ -16,3 +16,20 @@ if(NOT WIN32)
   # testlayer doesn't work on Windows
   add_subdirectory(testlayer)
 endif()
+
+# Add lit tests
+find_program(LIT_COMMAND lit)
+if(LIT_COMMAND)
+  configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/lit.site.cfg.py.in
+    ${CMAKE_CURRENT_BINARY_DIR}/lit.site.cfg.py
+    @ONLY)
+
+  add_custom_target(check
+    COMMAND ${LIT_COMMAND} -v ${CMAKE_CURRENT_BINARY_DIR}
+    DEPENDS spirv2clc
+    COMMENT "Running spirv2clc regression tests"
+    USES_TERMINAL)
+else()
+  message(WARNING "lit not found - lit tests will not be available")
+endif()

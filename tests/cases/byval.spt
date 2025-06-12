@@ -1,0 +1,18 @@
+; RUN: %spirv2clc --asm %s | %clang -c -cl-std=CL2.0 -x cl - -o /dev/null
+; SPIR-V
+; Version: 1.2
+; Generator: Khronos SPIR-V Tools Assembler; 0
+; Bound: 5
+; Schema: 0
+; byval used to be unsupported, generating an 'UNIMPLEMENTED FuncParamAttr 2'
+               OpCapability Kernel
+               OpCapability Addresses
+               OpCapability Linkage
+               OpMemoryModel Physical64 OpenCL
+               OpDecorate %1 FuncParamAttr ByVal
+          %2 = OpTypeVoid
+          %3 = OpTypeFunction %2
+          %4 = OpFunction %2 None %3
+          %1 = OpLabel
+               OpReturn
+               OpFunctionEnd

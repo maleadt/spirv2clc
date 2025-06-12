@@ -1,0 +1,44 @@
+; RUN: %spirv2clc --asm %s | %clang -c -cl-std=CL2.0 -x cl - -o /dev/null
+; SPIR-V
+; Version: 1.2
+; Generator: Khronos SPIR-V Tools Assembler; 0
+; Bound: 27
+; Schema: 0
+; used to generate an OOB/segfault due to indexing the struct by SSA ID
+; instead of by the constant index contained at that SSA value.
+               OpCapability Kernel
+               OpCapability Addresses
+               OpCapability Int64
+               OpCapability Linkage
+               OpMemoryModel Physical64 OpenCL
+               OpDecorate %1 BuiltIn WorkgroupId
+               OpDecorate %2 BuiltIn LocalInvocationId
+               OpDecorate %3 BuiltIn GlobalInvocationId
+          %4 = OpTypeInt 32 0
+          %5 = OpTypeInt 64 0
+          %6 = OpConstant %4 1
+          %7 = OpTypeArray %5 %6
+          %8 = OpTypeArray %7 %6
+          %9 = OpTypeArray %8 %6
+         %10 = OpConstant %4 2
+         %11 = OpTypeArray %9 %10
+         %12 = OpTypeStruct %9 %11
+         %13 = OpTypeStruct %12
+         %14 = OpTypePointer Function %13
+         %15 = OpTypeVoid
+         %16 = OpTypePointer Function %5
+         %17 = OpTypeVector %5 3
+         %18 = OpTypePointer Input %17
+         %19 = OpConstant %5 1
+         %20 = OpConstantNull %5
+         %21 = OpTypeFunction %15 %14
+          %1 = OpVariable %18 Input
+          %2 = OpVariable %18 Input
+         %22 = OpConstant %4 0
+          %3 = OpVariable %18 Input
+         %23 = OpFunction %15 None %21
+         %24 = OpFunctionParameter %14
+         %25 = OpLabel
+         %26 = OpInBoundsPtrAccessChain %16 %24 %20 %22 %6 %19 %20 %20 %20
+               OpReturn
+               OpFunctionEnd

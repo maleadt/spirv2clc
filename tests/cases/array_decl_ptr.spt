@@ -1,0 +1,41 @@
+; RUN: %spirv2clc --asm %s | %clang -c -cl-std=CL2.0 -x cl - -o /dev/null
+; SPIR-V
+; Version: 1.2
+; Generator: Khronos SPIR-V Tools Assembler; 0
+; Bound: 25
+; Schema: 0
+; used to throw an 'use of undeclared identifier' because of var decl of
+; ptr to array not being supported
+               OpCapability Kernel
+               OpCapability Addresses
+               OpCapability Int64
+               OpCapability Linkage
+               OpMemoryModel Physical64 OpenCL
+               OpDecorate %1 BuiltIn WorkgroupId
+               OpDecorate %2 BuiltIn LocalInvocationId
+          %3 = OpTypeVoid
+          %4 = OpTypeInt 32 0
+          %5 = OpTypeInt 64 0
+          %6 = OpConstant %4 1
+          %7 = OpTypeArray %5 %6
+          %8 = OpConstant %4 2
+          %9 = OpTypeArray %7 %8
+         %10 = OpTypeArray %9 %6
+         %11 = OpTypeArray %10 %8
+         %12 = OpTypeStruct %10 %11
+         %13 = OpTypeStruct %12
+         %14 = OpTypePointer Function %13
+         %15 = OpTypePointer Function %11
+         %16 = OpTypeVector %5 3
+         %17 = OpTypePointer Input %16
+         %18 = OpConstantNull %5
+         %19 = OpTypeFunction %3 %14
+         %20 = OpConstant %4 0
+          %1 = OpVariable %17 Input
+          %2 = OpVariable %17 Input
+         %21 = OpFunction %3 None %19
+         %22 = OpFunctionParameter %14
+         %23 = OpLabel
+         %24 = OpInBoundsPtrAccessChain %15 %22 %18 %20 %6
+               OpReturn
+               OpFunctionEnd
