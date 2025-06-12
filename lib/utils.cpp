@@ -42,6 +42,9 @@ uint32_t translator::array_type_get_length(uint32_t tyid) const {
 std::string translator::src_var_decl(uint32_t tyid, const std::string &name,
                                      uint32_t val) const {
   auto ty = type_for(tyid);
+
+  // Arrays (and pointers to arrays) need special handling; they don't have
+  // a valid type name registered because they require special syntax.
   if (ty->kind() == spvtools::opt::analysis::Type::Kind::kArray) {
     // Collect all array dimensions by walking through nested arrays
     std::vector<uint32_t> dimensions;
@@ -70,12 +73,48 @@ std::string translator::src_var_decl(uint32_t tyid, const std::string &name,
       result += "[" + std::to_string(dim) + "]";
     }
     return result;
-  } else {
-    if (val != 0) {
-      return src_type_for_value(val) + " " + name;
-    } else {
-      return src_type(tyid) + " " + name;
+  } else if (ty->kind() == spvtools::opt::analysis::Type::Kind::kPointer) {
+    auto ptr_ty = ty->AsPointer();
+    auto pointee_ty = ptr_ty->pointee_type();
+
+    if (pointee_ty->kind() == spvtools::opt::analysis::Type::Kind::kArray) {
+      // Collect all array dimensions by walking through nested arrays
+      std::vector<uint32_t> dimensions;
+      const auto *current_ty = pointee_ty;
+
+      while (current_ty->kind() ==
+             spvtools::opt::analysis::Type::Kind::kArray) {
+        auto aty = current_ty->AsArray();
+        auto cstmgr = m_ir->get_constant_mgr();
+        auto ecnt = cstmgr->FindDeclaredConstant(aty->LengthId())
+                        ->GetSignExtendedValue();
+        dimensions.push_back(ecnt);
+        current_ty = aty->element_type();
+      }
+
+      // Get the base pointer type (non-array)
+      auto base_type_id = type_id_for(current_ty);
+      auto storage = static_cast<uint32_t>(ptr_ty->storage_class());
+      std::string base_with_storage =
+          src_pointer_type(storage, base_type_id, false);
+
+      // Remove the trailing "*" since we need special pointer-to-array syntax
+      base_with_storage.pop_back();
+
+      // Build the declaration:
+      // base_type storage_qualifier (*name)[dim1][dim2]...[dimN]
+      std::string result = base_with_storage + "(*" + name + ")";
+      for (uint32_t dim : dimensions) {
+        result += "[" + std::to_string(dim) + "]";
+      }
+      return result;
     }
+  }
+
+  if (val != 0) {
+    return src_type_for_value(val) + " " + name;
+  } else {
+    return src_type(tyid) + " " + name;
   }
 }
 
