@@ -46,16 +46,64 @@ std::string translator::address_space_qualifier(uint32_t storage) const {
   }
 }
 
+void translator::declare_pointee_alias(uint32_t tyid) {
+  // SPIR-V memory is untyped: OpBitcast freely reinterprets pointers and the
+  // resulting loads/stores are well-defined, so the emitted C must not be
+  // subject to type-based alias analysis (e.g. a `*(ulong*)` load of float
+  // storage is UB that optimizers exploit by dropping the load). Spell every
+  // pointee through a may_alias typedef, the portable equivalent of compiling
+  // the generated code with -fno-strict-aliasing. A typedef is the one form
+  // Clang honours for TBAA: the attribute written inline in a declaration
+  // binds to the declared variable instead of the pointee type and has no
+  // effect. For a pointer pointee the attribute lands after the inner '*'
+  // (qualifier position), correctly marking that pointer level so loads of
+  // pointer values are exempted too.
+  //
+  // Called for the pointee of every OpTypePointer as it is translated, so all
+  // typedefs land in the type section (after the pointee's own definition)
+  // and every later spelling of a pointer type is a pure lookup.
+  if (m_pointee_aliases.count(tyid)) {
+    return;
+  }
+  switch (type_for(tyid)->kind()) {
+  case Type::Kind::kBool:
+  case Type::Kind::kInteger:
+  case Type::Kind::kFloat:
+  case Type::Kind::kVector:
+  case Type::Kind::kArray:
+  case Type::Kind::kStruct:
+  case Type::Kind::kPointer:
+    break;
+  default:
+    // Not dereferenceable through reinterpreted pointers (void, images,
+    // samplers, events, opaque structs); keep the raw spelling.
+    m_pointee_aliases[tyid] = src_type(tyid);
+    return;
+  }
+  std::string name = "ma" + std::to_string(tyid);
+  m_src << "typedef " << src_type(tyid) << " __attribute__((may_alias)) "
+        << name << ";" << std::endl;
+  m_pointee_aliases[tyid] = name;
+  if (m_types_signed.count(tyid)) {
+    m_src << "typedef " << src_type_signed(tyid)
+          << " __attribute__((may_alias)) " << name << "s;" << std::endl;
+    m_pointee_aliases_signed[tyid] = name + "s";
+  }
+}
+
 std::string translator::src_pointer_type(uint32_t storage, uint32_t tyid, bool signedty) const {
   // Every pointee type (including arrays, which are struct-wrapped) has a flat
-  // type name, so a pointer is just "<pointee> <addrspace>*". A pointer-to-array
-  // becomes a pointer-to-wrapper, which carries the correct element stride.
-  std::string typestr;
-  if (signedty) {
-    typestr += src_type_signed(tyid);
-  } else {
-    typestr += src_type(tyid);
+  // type name, so a pointer is just "<pointee> <addrspace>*". A
+  // pointer-to-array becomes a pointer-to-wrapper, which carries the correct
+  // element stride. Pointees are spelled through their may_alias typedef; see
+  // declare_pointee_alias for why. The alias always exists here: every caller
+  // spells a pointer type whose OpTypePointer has already been translated.
+  auto &aliases = signedty ? m_pointee_aliases_signed : m_pointee_aliases;
+  if (!aliases.count(tyid)) {
+    return note_unsupported("pointer to type " + std::to_string(tyid) +
+                            " without a pointee alias");
   }
+  std::string typestr = aliases.at(tyid);
   std::string as = address_space_qualifier(storage);
   if (as == "UNIMPLEMENTED") {
     return as;
@@ -73,6 +121,7 @@ bool translator::translate_type(const Instruction &inst) {
   case spv::Op::OpTypePointer: {
     auto storage = inst.GetSingleWordOperand(1);
     auto type = inst.GetSingleWordOperand(2);
+    declare_pointee_alias(type);
     if (m_types_signed.count(type)) {
       signedtypestr = src_pointer_type(storage, type, true);
     }

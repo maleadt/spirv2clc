@@ -22,4 +22,5 @@
                OpReturn
                OpFunctionEnd
 ; The target is dereferenced directly; the cast sits on the source (read) side.
-; CHECK: = *((uint global*)(
+; CHECK: typedef uint __attribute__((may_alias)) [[MA:ma[0-9]+]];
+; CHECK: = *(([[MA]] global*)(

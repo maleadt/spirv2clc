@@ -23,4 +23,5 @@
                OpStore %e0 %uint_0
                OpReturn
                OpFunctionEnd
-; CHECK: local arr{{[0-9]+}} {{.*}}_storage; arr{{[0-9]+}} local* {{.*}} = &
+; CHECK: typedef arr{{[0-9]+}} __attribute__((may_alias)) [[MA:ma[0-9]+]];
+; CHECK: local arr{{[0-9]+}} {{.*}}_storage; [[MA]] local* {{.*}} = &

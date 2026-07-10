@@ -1,0 +1,50 @@
+; SPIR-V memory is untyped: storing floats and loading the same bytes back
+; through an OpBitcast'd ulong pointer is well-defined. Spelled as plain C
+; pointer casts that is a strict-aliasing violation, and Clang's TBAA folds
+; the mismatched load to poison (observed as GPUArrays' Float32 tuple
+; reductions returning their neutral element under PoCL). Every pointee must
+; therefore be spelled through a may_alias typedef -- the only form Clang
+; honours; the attribute inline in a declaration binds to the variable and
+; does nothing.
+; RUN: %spirv2clc --asm %s | %clang -c -cl-std=CL1.2 -x cl - -o /dev/null
+; RUN: %spirv2clc --asm %s | %FileCheck %s
+               OpCapability Kernel
+               OpCapability Addresses
+               OpCapability Int64
+               OpMemoryModel Physical64 OpenCL
+               OpEntryPoint Kernel %k "test"
+       %void = OpTypeVoid
+       %uint = OpTypeInt 32 0
+      %ulong = OpTypeInt 64 0
+      %float = OpTypeFloat 32
+     %uint_0 = OpConstant %uint 0
+     %uint_1 = OpConstant %uint 1
+        %one = OpConstant %float 1
+        %two = OpConstant %float 2
+     %struct = OpTypeStruct %float %float
+    %p_f_str = OpTypePointer Function %struct
+    %p_f_f32 = OpTypePointer Function %float
+    %p_f_u64 = OpTypePointer Function %ulong
+    %p_g_u64 = OpTypePointer CrossWorkgroup %ulong
+       %fnty = OpTypeFunction %void %p_g_u64
+          %k = OpFunction %void None %fnty
+        %out = OpFunctionParameter %p_g_u64
+        %lbl = OpLabel
+        %tmp = OpVariable %p_f_str Function
+         %f0 = OpInBoundsAccessChain %p_f_f32 %tmp %uint_0
+               OpStore %f0 %one
+         %f1 = OpInBoundsAccessChain %p_f_f32 %tmp %uint_1
+               OpStore %f1 %two
+        %pun = OpBitcast %p_f_u64 %tmp
+        %val = OpLoad %ulong %pun
+               OpStore %out %val
+               OpReturn
+               OpFunctionEnd
+; Both sides of the punned access are spelled through may_alias typedefs:
+; CHECK-DAG: typedef float __attribute__((may_alias)) [[F:ma[0-9]+]];
+; CHECK-DAG: typedef ulong __attribute__((may_alias)) [[U:ma[0-9]+]];
+; The float stores land in storage addressed as [[F]] ...
+; CHECK: [[F]] private*
+; ... and the bitcast pointer and the load through it use [[U]]:
+; CHECK: [[U]] private* [[P:v[0-9]+]] = (([[U]] private*)
+; CHECK: = *[[P]];

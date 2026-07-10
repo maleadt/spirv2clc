@@ -21,4 +21,5 @@
                OpStore %out %zero
                OpReturn
                OpFunctionEnd
-; CHECK: kernel k(uint global* restrict
+; CHECK: typedef uint __attribute__((may_alias)) [[MA:ma[0-9]+]];
+; CHECK: kernel k([[MA]] global* restrict

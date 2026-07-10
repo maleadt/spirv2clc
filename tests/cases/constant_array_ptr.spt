@@ -27,4 +27,5 @@
                OpReturn
                OpFunctionEnd
 ; CHECK: constant arr{{[0-9]+}} {{.*}}_storage =
-; CHECK: (uchar constant*)(&
+; CHECK: typedef uchar __attribute__((may_alias)) [[UC:ma[0-9]+]];
+; CHECK: ([[UC]] constant*)(&

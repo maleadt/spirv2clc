@@ -25,4 +25,5 @@
          %bb = OpLabel
                OpReturn
                OpFunctionEnd
-; CHECK: global uchar global* {{[A-Za-z0-9_]+}} = ((uchar global*)((uchar generic*)0));
+; CHECK: typedef uchar __attribute__((may_alias)) [[UC:ma[0-9]+]];
+; CHECK: global [[UC]] global* {{[A-Za-z0-9_]+}} = (([[UC]] global*)(([[UC]] generic*)0));

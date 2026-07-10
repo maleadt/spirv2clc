@@ -296,6 +296,11 @@ private:
 
   std::string src_pointer_type(uint32_t storage, uint32_t tyid, bool signedty) const;
 
+  // Emit the may_alias typedef(s) for a pointee type into the type section,
+  // once per type; see the definition for why every pointee must be
+  // may_alias. Called when translating each OpTypePointer.
+  void declare_pointee_alias(uint32_t tyid);
+
   std::string src_aggregate_element_type(uint32_t tyid) const;
 
   // Render a value being written into an aggregate leaf of SPIR-V type `tyid`.
@@ -366,6 +371,8 @@ private:
     m_names.clear();
     m_types.clear();
     m_types_signed.clear();
+    m_pointee_aliases.clear();
+    m_pointee_aliases_signed.clear();
     m_literals.clear();
     m_entry_points.clear();
     m_entry_points_local_size.clear();
@@ -404,6 +411,9 @@ private:
   std::unordered_map<uint32_t, std::string> m_names;
   std::unordered_map<uint32_t, std::string> m_types;
   std::unordered_map<uint32_t, std::string> m_types_signed;
+  // Pointee type id -> may_alias typedef name (see declare_pointee_alias).
+  std::unordered_map<uint32_t, std::string> m_pointee_aliases;
+  std::unordered_map<uint32_t, std::string> m_pointee_aliases_signed;
   std::unordered_map<uint32_t, std::string> m_literals;
   std::unordered_map<uint32_t, std::string> m_entry_points;
   std::unordered_map<uint32_t, std::tuple<uint32_t, uint32_t, uint32_t>>
