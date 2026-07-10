@@ -108,13 +108,15 @@ std::string translator::src_dereference(uint32_t ptr,
                                         const MemoryAccess &access) const {
   auto ptrty = type_for_val(ptr)->AsPointer();
   auto pointee = m_ir->get_type_mgr()->GetId(ptrty->pointee_type());
-  if (!is_underaligned(pointee, access)) {
+  bool vol = access.mask & SpvMemoryAccessVolatileMask;
+  if (!vol && !is_underaligned(pointee, access)) {
     return "*" + var_for(ptr);
   }
   auto as =
       address_space_qualifier(static_cast<uint32_t>(ptrty->storage_class()));
-  return "*((" + src_access_pointee(pointee, access) + " " + as + "*)" +
-         var_for(ptr) + ")";
+  return "*((" + std::string(vol ? "volatile " : "") +
+         src_access_pointee(pointee, access) + " " + as + "*)" + var_for(ptr) +
+         ")";
 }
 
 bool translator::translate_instruction(const Instruction &inst,
@@ -250,7 +252,9 @@ bool translator::translate_instruction(const Instruction &inst,
     if (inst.NumOperands() <= tgt_access.next) {
       src_access = tgt_access;
     }
+    bool src_vol = src_access.mask & SpvMemoryAccessVolatileMask;
     src = src_dereference(target, tgt_access) + " = *((" +
+          std::string(src_vol ? "volatile " : "") +
           src_access_pointee(tgt_pointee, src_access) + " " +
           address_space_qualifier(src_storage) + "*)(" + var_for(source) + "))";
     break;
@@ -263,14 +267,26 @@ bool translator::translate_instruction(const Instruction &inst,
     // Explicit byte count, and the operands may have differently-sized pointee
     // types, so a typed assignment would copy the wrong amount. Copy byte-wise
     // instead, casting each pointer to a byte pointer in its own address space;
-    // optimizers fold the small loop back into an efficient copy.
+    // optimizers fold the small loop back into an efficient copy. Byte
+    // accesses cannot be under-aligned, but a Volatile memory operand must
+    // survive (the first applies to the target, a second, if present, to the
+    // source).
+    auto tgt_access = memory_access_operands(inst, 3);
+    auto src_access = memory_access_operands(inst, tgt_access.next);
+    if (inst.NumOperands() <= tgt_access.next) {
+      src_access = tgt_access;
+    }
+    std::string tgt_vol =
+        (tgt_access.mask & SpvMemoryAccessVolatileMask) ? "volatile " : "";
+    std::string src_vol =
+        (src_access.mask & SpvMemoryAccessVolatileMask) ? "volatile " : "";
     auto tgt_as = address_space_qualifier(
         static_cast<uint32_t>(type_for_val(target)->AsPointer()->storage_class()));
     auto src_as = address_space_qualifier(
         static_cast<uint32_t>(type_for_val(source)->AsPointer()->storage_class()));
-    src = "for (ulong _i = 0; _i < " + var_for(size) + "; ++_i) ((uchar " +
-          tgt_as + "*)(" + var_for(target) + "))[_i] = ((uchar " + src_as +
-          "*)(" + var_for(source) + "))[_i]";
+    src = "for (ulong _i = 0; _i < " + var_for(size) + "; ++_i) ((" + tgt_vol +
+          "uchar " + tgt_as + "*)(" + var_for(target) + "))[_i] = ((" +
+          src_vol + "uchar " + src_as + "*)(" + var_for(source) + "))[_i]";
     break;
   }
   case spv::Op::OpConvertPtrToU:

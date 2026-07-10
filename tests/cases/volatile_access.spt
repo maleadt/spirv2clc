@@ -1,0 +1,42 @@
+; The Volatile MemoryAccess flag on individual loads and stores (distinct from
+; the Volatile *decoration* on variables, which is handled separately) must
+; survive translation, or the consuming compiler is free to fold, hoist or
+; dedup the access. Such accesses are dereferenced through a volatile-
+; qualified pointer; combined with Aligned below natural alignment, the
+; reduced-alignment alias is qualified. Unflagged accesses stay plain.
+; RUN: %spirv2clc --asm %s | %clang -c -cl-std=CL1.2 -x cl - -o /dev/null
+; RUN: %spirv2clc --asm %s | %FileCheck %s
+               OpCapability Kernel
+               OpCapability Addresses
+               OpMemoryModel Physical64 OpenCL
+               OpEntryPoint Kernel %k "test"
+       %void = OpTypeVoid
+       %uint = OpTypeInt 32 0
+     %uint_1 = OpConstant %uint 1
+     %p_g_u32 = OpTypePointer CrossWorkgroup %uint
+     %p_f_u32 = OpTypePointer Function %uint
+       %fnty = OpTypeFunction %void %p_g_u32
+          %k = OpFunction %void None %fnty
+         %in = OpFunctionParameter %p_g_u32
+        %lbl = OpLabel
+        %tmp = OpVariable %p_f_u32 Function
+         %v1 = OpLoad %uint %in Volatile
+               OpStore %in %uint_1 Volatile
+         %v2 = OpLoad %uint %in Volatile|Aligned 2
+               OpCopyMemory %tmp %in Volatile
+         %v3 = OpLoad %uint %in
+               OpStore %in %v3
+               OpReturn
+               OpFunctionEnd
+; CHECK: typedef uint __attribute__((may_alias)) [[U:ma[0-9]+]];
+; CHECK: typedef [[U]] __attribute__((aligned(2))) [[UA:ma[0-9]+a2]];
+; Volatile load and store go through a volatile-qualified pointer:
+; CHECK: = *((volatile [[U]] global*)[[IN:v[0-9]+]]);
+; CHECK: *((volatile [[U]] global*)[[IN]]) = ((uint)1);
+; Volatile combines with under-alignment:
+; CHECK: = *((volatile [[UA]] global*)[[IN]]);
+; A single memory operand on OpCopyMemory applies to both sides:
+; CHECK: *((volatile [[U]] private*){{v[0-9]+}}) = *((volatile [[U]] global*)([[IN]]));
+; Unflagged accesses stay plain dereferences:
+; CHECK: [[V3:v[0-9]+]] = *[[IN]];
+; CHECK: *[[IN]] = [[V3]];
