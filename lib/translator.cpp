@@ -877,6 +877,10 @@ int translator::translate() {
     return 1;
   }
 
+  // Under-aligned accesses in the function bodies need reduced-alignment
+  // typedefs; mint them now, while still in the type section.
+  declare_underaligned_aliases();
+
   // Work out which non-entry functions reference module-scope Workgroup
   // variables, so their signatures and call sites can thread them through as
   // local-pointer parameters (OpenCL C has no program-scope local storage).

@@ -14,12 +14,14 @@
 
 #pragma once
 
+#include <map>
 #include <memory>
 #include <optional>
 #include <sstream>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "libspirv2clc_export.h"
@@ -301,6 +303,44 @@ private:
   // may_alias. Called when translating each OpTypePointer.
   void declare_pointee_alias(uint32_t tyid);
 
+  // A parsed MemoryAccess operand of a load/store/copy: the literal mask, the
+  // alignment literal when the Aligned bit is set, and the operand index just
+  // past this memory operand (== the queried index when absent).
+  struct MemoryAccess {
+    uint32_t mask = 0;
+    uint32_t alignment = 0;
+    unsigned next = 0;
+  };
+  MemoryAccess memory_access_operands(const spvtools::opt::Instruction &inst,
+                                      unsigned index) const;
+
+  // The type id of the pointee of a pointer-typed value.
+  uint32_t pointee_type_id(uint32_t val) const;
+
+  // The alignment a C dereference asserts of a pointee (OpenCL C rules:
+  // scalars/vectors align to their size, aggregates to their strictest
+  // member). 1 for types never accessed through reinterpreted pointers.
+  uint32_t natural_alignment(uint32_t tyid) const;
+
+  // Whether an access promises less alignment than a C dereference of its
+  // pointee would assert.
+  bool is_underaligned(uint32_t tyid, const MemoryAccess &access) const;
+
+  // Scan all function bodies and mint reduced-alignment typedefs for every
+  // under-aligned access; runs after type translation so the typedefs land in
+  // the type section. See the definition for why.
+  void declare_underaligned_aliases();
+
+  // The pointee spelling for an access: the reduced-alignment alias when the
+  // access is under-aligned, the plain may_alias alias otherwise.
+  std::string src_access_pointee(uint32_t tyid,
+                                 const MemoryAccess &access) const;
+
+  // The lvalue for a load/store through `ptr`, honouring the access's
+  // MemoryAccess operands: a plain dereference when they claim nothing a C
+  // dereference doesn't, a cast through src_access_pointee otherwise.
+  std::string src_dereference(uint32_t ptr, const MemoryAccess &access) const;
+
   std::string src_aggregate_element_type(uint32_t tyid) const;
 
   // Render a value being written into an aggregate leaf of SPIR-V type `tyid`.
@@ -373,6 +413,7 @@ private:
     m_types_signed.clear();
     m_pointee_aliases.clear();
     m_pointee_aliases_signed.clear();
+    m_underaligned_aliases.clear();
     m_literals.clear();
     m_entry_points.clear();
     m_entry_points_local_size.clear();
@@ -414,6 +455,9 @@ private:
   // Pointee type id -> may_alias typedef name (see declare_pointee_alias).
   std::unordered_map<uint32_t, std::string> m_pointee_aliases;
   std::unordered_map<uint32_t, std::string> m_pointee_aliases_signed;
+  // (pointee type id, alignment) -> reduced-alignment typedef name (see
+  // declare_underaligned_aliases).
+  std::map<std::pair<uint32_t, uint32_t>, std::string> m_underaligned_aliases;
   std::unordered_map<uint32_t, std::string> m_literals;
   std::unordered_map<uint32_t, std::string> m_entry_points;
   std::unordered_map<uint32_t, std::tuple<uint32_t, uint32_t, uint32_t>>

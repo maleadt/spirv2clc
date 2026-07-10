@@ -91,6 +91,138 @@ void translator::declare_pointee_alias(uint32_t tyid) {
   }
 }
 
+translator::MemoryAccess
+translator::memory_access_operands(const Instruction &inst,
+                                   unsigned index) const {
+  MemoryAccess access;
+  access.next = index;
+  if (inst.NumOperands() <= index) {
+    return access;
+  }
+  access.mask = inst.GetSingleWordOperand(index);
+  access.next = index + 1;
+  if (access.mask & SpvMemoryAccessAlignedMask) {
+    access.alignment = inst.GetSingleWordOperand(access.next);
+    access.next += 1;
+  }
+  // MakePointerAvailable/Visible carry an extra scope id, but they require
+  // the Vulkan memory model and cannot appear in OpenCL modules.
+  return access;
+}
+
+uint32_t translator::pointee_type_id(uint32_t val) const {
+  auto pointee = type_for_val(val)->AsPointer()->pointee_type();
+  return m_ir->get_type_mgr()->GetId(pointee);
+}
+
+uint32_t translator::natural_alignment(uint32_t tyid) const {
+  auto tymgr = m_ir->get_type_mgr();
+  const Type *ty = type_for(tyid);
+  switch (ty->kind()) {
+  case Type::Kind::kInteger:
+    return std::max(1u, ty->AsInteger()->width() / 8);
+  case Type::Kind::kFloat:
+    return std::max(1u, ty->AsFloat()->width() / 8);
+  case Type::Kind::kVector: {
+    // OpenCL C vectors align to their size, with 3-component vectors sized
+    // like 4-component ones.
+    auto count = ty->AsVector()->element_count();
+    if (count == 3) {
+      count = 4;
+    }
+    return count *
+           natural_alignment(tymgr->GetId(ty->AsVector()->element_type()));
+  }
+  case Type::Kind::kArray:
+    return natural_alignment(tymgr->GetId(ty->AsArray()->element_type()));
+  case Type::Kind::kStruct: {
+    if (m_packed.count(tyid)) {
+      return 1;
+    }
+    uint32_t align = 1;
+    for (auto *elem : ty->AsStruct()->element_types()) {
+      align = std::max(align, natural_alignment(tymgr->GetId(elem)));
+    }
+    return align;
+  }
+  case Type::Kind::kPointer:
+    return 8; // pointers are 8 bytes wide under Physical64 (assumed throughout)
+  default:
+    // bool, images, samplers, ...: never accessed through reinterpreted
+    // pointers, and 1 can never be under-aligned.
+    return 1;
+  }
+}
+
+bool translator::is_underaligned(uint32_t tyid,
+                                 const MemoryAccess &access) const {
+  return (access.mask & SpvMemoryAccessAlignedMask) && access.alignment != 0 &&
+         access.alignment < natural_alignment(tyid);
+}
+
+void translator::declare_underaligned_aliases() {
+  // A C dereference asserts the pointee's natural alignment, but a SPIR-V
+  // access can promise less (an Aligned memory operand below the type's
+  // natural alignment -- e.g. an i64 load of a 4-aligned pair of floats
+  // reached through OpBitcast), and consumers exploit the stronger claim
+  // (vectorizers emit aligned instructions, strict targets fault). Such
+  // accesses are dereferenced through a reduced-alignment typedef instead --
+  // only a typedef can lower alignment in C -- built on top of the pointee's
+  // may_alias alias so both properties hold at once.
+  auto mint = [this](const Instruction &inst, uint32_t tyid,
+                     unsigned index) -> MemoryAccess {
+    auto access = memory_access_operands(inst, index);
+    if (!is_underaligned(tyid, access)) {
+      return access;
+    }
+    auto key = std::make_pair(tyid, access.alignment);
+    if (m_underaligned_aliases.count(key)) {
+      return access;
+    }
+    // Every pointee reached by a load/store has an OpTypePointer, so its
+    // may_alias alias exists (and is a real typedef: non-dereferenceable
+    // kinds are filtered out by their natural alignment of 1 above).
+    auto base = m_pointee_aliases.at(tyid);
+    auto name = base + "a" + std::to_string(access.alignment);
+    m_src << "typedef " << base << " __attribute__((aligned("
+          << access.alignment << "))) " << name << ";" << std::endl;
+    m_underaligned_aliases.emplace(key, name);
+    return access;
+  };
+  for (auto &func : *m_ir->module()) {
+    for (auto &bb : func) {
+      for (auto &inst : bb) {
+        switch (inst.opcode()) {
+        case spv::Op::OpLoad:
+          mint(inst, pointee_type_id(inst.GetSingleWordOperand(2)), 3);
+          break;
+        case spv::Op::OpStore:
+          mint(inst, pointee_type_id(inst.GetSingleWordOperand(0)), 2);
+          break;
+        case spv::Op::OpCopyMemory: {
+          // The first memory operand applies to the target, a second (SPIR-V
+          // 1.4+), if present, to the source; both sides share a pointee.
+          auto tyid = pointee_type_id(inst.GetSingleWordOperand(0));
+          auto access = mint(inst, tyid, 2);
+          mint(inst, tyid, access.next);
+          break;
+        }
+        default:
+          break;
+        }
+      }
+    }
+  }
+}
+
+std::string translator::src_access_pointee(uint32_t tyid,
+                                           const MemoryAccess &access) const {
+  if (is_underaligned(tyid, access)) {
+    return m_underaligned_aliases.at({tyid, access.alignment});
+  }
+  return m_pointee_aliases.at(tyid);
+}
+
 std::string translator::src_pointer_type(uint32_t storage, uint32_t tyid, bool signedty) const {
   // Every pointee type (including arrays, which are struct-wrapped) has a flat
   // type name, so a pointer is just "<pointee> <addrspace>*". A

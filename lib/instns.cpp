@@ -104,6 +104,19 @@ std::string translator::fence_flags(uint32_t mem_sem) const {
   return flags.empty() ? "0" : flags;
 }
 
+std::string translator::src_dereference(uint32_t ptr,
+                                        const MemoryAccess &access) const {
+  auto ptrty = type_for_val(ptr)->AsPointer();
+  auto pointee = m_ir->get_type_mgr()->GetId(ptrty->pointee_type());
+  if (!is_underaligned(pointee, access)) {
+    return "*" + var_for(ptr);
+  }
+  auto as =
+      address_space_qualifier(static_cast<uint32_t>(ptrty->storage_class()));
+  return "*((" + src_access_pointee(pointee, access) + " " + as + "*)" +
+         var_for(ptr) + ")";
+}
+
 bool translator::translate_instruction(const Instruction &inst,
                                        std::string &src) {
   auto opcode = inst.opcode();
@@ -208,14 +221,15 @@ bool translator::translate_instruction(const Instruction &inst,
       m_builtin_values[result] = m_builtin_variables.at(ptr);
       assign_result = false;
     } else {
-      sval = "*" + var_for(ptr);
+      sval = src_dereference(ptr, memory_access_operands(inst, 3));
     }
     break;
   }
   case spv::Op::OpStore: {
     auto ptr = inst.GetSingleWordOperand(0);
     auto val = inst.GetSingleWordOperand(1);
-    src = "*" + var_for(ptr) + " = " + var_for(val);
+    src = src_dereference(ptr, memory_access_operands(inst, 2)) + " = " +
+          var_for(val);
     break;
   }
   case spv::Op::OpCopyMemory: {
@@ -225,14 +239,20 @@ bool translator::translate_instruction(const Instruction &inst,
     // Same pointee type, so copy by value (arrays are struct-wrapped, so this
     // is a legal aggregate assignment). A cast cannot change address space, so
     // reinterpret the source to the target's pointee within its own space and
-    // let the assignment cross address spaces.
+    // let the assignment cross address spaces. The first memory operand
+    // applies to the target, the second (SPIR-V 1.4+, or the first again when
+    // absent) to the source.
     auto src_storage =
         static_cast<uint32_t>(type_for_val(source)->AsPointer()->storage_class());
-    auto tgt_pointee =
-        m_ir->get_type_mgr()->GetId(type_for_val(target)->AsPointer()->pointee_type());
-    src = "*(" + var_for(target) + ") = *((" +
-          src_pointer_type(src_storage, tgt_pointee, false) + ")(" +
-          var_for(source) + "))";
+    auto tgt_pointee = pointee_type_id(target);
+    auto tgt_access = memory_access_operands(inst, 2);
+    auto src_access = memory_access_operands(inst, tgt_access.next);
+    if (inst.NumOperands() <= tgt_access.next) {
+      src_access = tgt_access;
+    }
+    src = src_dereference(target, tgt_access) + " = *((" +
+          src_access_pointee(tgt_pointee, src_access) + " " +
+          address_space_qualifier(src_storage) + "*)(" + var_for(source) + "))";
     break;
   }
   case spv::Op::OpCopyMemorySized: {

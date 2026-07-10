@@ -1,0 +1,52 @@
+; A C dereference asserts the pointee's natural alignment, but a SPIR-V access
+; can promise less: here an i64 load/store, Aligned 4, of a 4-aligned pair of
+; floats reached through OpBitcast (the shape Julia 1.13 emits for
+; Tuple{Float32,Float32} reduction accumulators). Acting on the natural-
+; alignment claim is UB -- vectorizers emit aligned instructions, strict
+; targets fault -- so such accesses must go through a reduced-alignment
+; typedef (the only C form that can lower alignment), stacked on the pointee's
+; may_alias alias. Accesses at or above natural alignment stay plain
+; dereferences.
+; RUN: %spirv2clc --asm %s | %clang -c -cl-std=CL1.2 -x cl - -o /dev/null
+; RUN: %spirv2clc --asm %s | %FileCheck %s
+               OpCapability Kernel
+               OpCapability Addresses
+               OpCapability Int64
+               OpMemoryModel Physical64 OpenCL
+               OpEntryPoint Kernel %k "test"
+       %void = OpTypeVoid
+       %uint = OpTypeInt 32 0
+      %ulong = OpTypeInt 64 0
+      %float = OpTypeFloat 32
+     %uint_0 = OpConstant %uint 0
+     %uint_1 = OpConstant %uint 1
+        %one = OpConstant %float 1
+    %ulong_2 = OpConstant %ulong 2
+     %struct = OpTypeStruct %float %float
+    %p_f_str = OpTypePointer Function %struct
+    %p_f_f32 = OpTypePointer Function %float
+    %p_f_u64 = OpTypePointer Function %ulong
+    %p_g_u64 = OpTypePointer CrossWorkgroup %ulong
+       %fnty = OpTypeFunction %void %p_g_u64
+          %k = OpFunction %void None %fnty
+        %out = OpFunctionParameter %p_g_u64
+        %lbl = OpLabel
+        %tmp = OpVariable %p_f_str Function
+         %f0 = OpInBoundsAccessChain %p_f_f32 %tmp %uint_0
+               OpStore %f0 %one Aligned 4
+         %f1 = OpInBoundsAccessChain %p_f_f32 %tmp %uint_1
+               OpStore %f1 %one Aligned 4
+        %pun = OpBitcast %p_f_u64 %tmp
+        %val = OpLoad %ulong %pun Aligned 4
+               OpStore %pun %ulong_2 Aligned 4
+               OpStore %out %val Aligned 8
+               OpReturn
+               OpFunctionEnd
+; The reduced-alignment typedef stacks on the may_alias alias:
+; CHECK: typedef ulong __attribute__((may_alias)) [[U:ma[0-9]+]];
+; CHECK: typedef [[U]] __attribute__((aligned(4))) [[UA:ma[0-9]+a4]];
+; The 4-aligned i64 load and store go through it ...
+; CHECK: = *(([[UA]] private*)[[PUN:v[0-9]+]]);
+; CHECK: *(([[UA]] private*)[[PUN]]) = ((ulong)2);
+; ... while the naturally-aligned (Aligned 8) store stays a plain dereference.
+; CHECK: *{{v[0-9]+}} = [[VAL:v[0-9]+]];
