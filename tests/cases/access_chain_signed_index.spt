@@ -1,9 +1,11 @@
 ; RUN: %spirv2clc --asm %s | %clang -c -cl-std=CL1.2 -x cl - -o /dev/null
 ; RUN: %spirv2clc --asm %s | %FileCheck %s
 ; An OpPtrAccessChain element index is signed (Julia emits -1 to undo 1-based
-; indexing). Emitting it as the raw unsigned constant 0xFFFF... overflows the
-; pointer arithmetic (undefined behavior) and miscompiles on real drivers, so
-; the index must be cast to a signed type: &base[(long)(...)] is base - 1.
+; indexing): it must be sign-extended to the offset width before scaling, as
+; a narrow -1 zero-extended would step forward, not back. The computation
+; goes through integers ((ulong)base + offset, wrapping) because base - 1 may
+; be outside the object, which C pointer arithmetic (inbounds GEPs) would
+; turn into poison.
                OpCapability Kernel
                OpCapability Addresses
                OpCapability Int8
@@ -23,4 +25,4 @@
         %nxt = OpPtrAccessChain %puchar %param %ulong_minus1
                OpReturn
                OpFunctionEnd
-; CHECK: = &{{v[0-9]+}}[(long)(
+; CHECK: = (({{ma[0-9]+}} global*)((ulong)[[BASE:v[0-9]+]] + (ulong)((long)({{.*}})) * sizeof(*[[BASE]])));

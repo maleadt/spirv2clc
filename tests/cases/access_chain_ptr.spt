@@ -2,7 +2,9 @@
 ; RUN: %spirv2clc --asm %s | %FileCheck %s
 ; OpPtrAccessChain (non-InBounds) used to hit UNIMPLEMENTED. With a leading
 ; element index on a pointer-to-array, the stride must be a whole array: the
-; base is typed as the array wrapper, so C pointer arithmetic is correct.
+; base is typed as the array wrapper, so sizeof(*base) is the right scale.
+; The arithmetic goes through integers because the non-InBounds variant makes
+; no in-bounds promise, while C pointer arithmetic (inbounds GEPs) does.
                OpCapability Kernel
                OpCapability Addresses
                OpCapability Linkage
@@ -22,4 +24,4 @@
                OpReturn
                OpFunctionEnd
 ; CHECK: typedef arr{{[0-9]+}} __attribute__((may_alias)) [[MA:ma[0-9]+]];
-; CHECK: [[MA]] global* {{v[0-9]+}} = &
+; CHECK: [[MA]] global* {{v[0-9]+}} = (([[MA]] global*)((ulong)[[BASE:v[0-9]+]] + (ulong)({{.*}}) * sizeof(*[[BASE]])));

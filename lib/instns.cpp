@@ -11,7 +11,20 @@ bool translator::emit_access_chain(const Instruction &inst, bool ptr_variant,
     // emit it as such: a -1 here (1-based indexing) must subtract one element,
     // not add 0xFFFF... and overflow the pointer.
     auto elem = inst.GetSingleWordOperand(3);
-    sval = "&" + var_for(base) + "[" + src_signed_index(elem) + "]";
+    if (inst.opcode() == spv::Op::OpInBoundsPtrAccessChain) {
+      sval = "&" + var_for(base) + "[" + src_signed_index(elem) + "]";
+    } else {
+      // Only the InBounds variant promises the result stays within the
+      // base's object. C pointer arithmetic always claims that (compilers
+      // lower it to inbounds GEPs, making an out-of-bounds intermediate --
+      // e.g. `p - 1 + i` from 1-based indexing -- poison), so the plain
+      // variant must go through integer arithmetic, which claims nothing.
+      // Interior struct/array steps below still use typed lvalues: C cannot
+      // express an out-of-bounds member walk, and producers don't emit them.
+      sval = "((" + src_type(type_id_for(base)) + ")((ulong)" + var_for(base) +
+             " + (ulong)(" + src_signed_index(elem) + ") * sizeof(*" +
+             var_for(base) + ")))";
+    }
     i = 4;
   } else {
     // The plain variants' first index walks into the pointee directly.

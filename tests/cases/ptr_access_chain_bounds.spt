@@ -1,0 +1,31 @@
+; Only OpInBoundsPtrAccessChain promises its result stays within the base's
+; object, so only it may use C pointer arithmetic (which compilers lower to
+; inbounds GEPs, turning out-of-bounds intermediates -- e.g. `p - 1 + i` from
+; 1-based indexing -- into poison). The plain OpPtrAccessChain must instead
+; compute the address as integers, which claims nothing.
+; RUN: %spirv2clc --asm %s | %clang -c -cl-std=CL1.2 -x cl - -o /dev/null
+; RUN: %spirv2clc --asm %s | %FileCheck %s
+               OpCapability Kernel
+               OpCapability Addresses
+               OpCapability Int64
+               OpMemoryModel Physical64 OpenCL
+               OpEntryPoint Kernel %k "test"
+       %void = OpTypeVoid
+       %uint = OpTypeInt 32 0
+      %ulong = OpTypeInt 64 0
+     %uint_0 = OpConstant %uint 0
+    %p_g_u32 = OpTypePointer CrossWorkgroup %uint
+       %fnty = OpTypeFunction %void %p_g_u32 %ulong
+          %k = OpFunction %void None %fnty
+         %in = OpFunctionParameter %p_g_u32
+          %i = OpFunctionParameter %ulong
+        %lbl = OpLabel
+       %oob = OpPtrAccessChain %p_g_u32 %in %i
+        %ib = OpInBoundsPtrAccessChain %p_g_u32 %oob %i
+               OpStore %ib %uint_0
+               OpReturn
+               OpFunctionEnd
+; The plain variant computes the address as integers ...
+; CHECK: = (([[MA:ma[0-9]+]] global*)((ulong)[[BASE:v[0-9]+]] + (ulong)((long)([[I:v[0-9]+]])) * sizeof(*[[BASE]])));
+; ... while the InBounds variant keeps C pointer arithmetic.
+; CHECK: = &[[OOB:v[0-9]+]][(long)([[I]])];
